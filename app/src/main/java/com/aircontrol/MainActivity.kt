@@ -34,6 +34,10 @@ class MainActivity : ComponentActivity() {
 
     private var handLandmarker: HandLandmarker? = null
     private var lastTimestamp = 0L
+    private var lastGesture = "NONE"
+    private var lastActionTime = 0L
+    private var lastGestureSince = 0L
+    private var controlPaused = false
 
     private val permissionLauncher =
         registerForActivityResult(
@@ -241,21 +245,68 @@ class MainActivity : ComponentActivity() {
             val result =
                 handLandmarker?.detectForVideo(mpImage, timestamp)
 
-            val hands = result?.landmarks()?.size ?: 0
+            val handLandmarks = result?.landmarks()?.firstOrNull()
 
-            updateStatus(
-                if (hands > 0) {
-                    "Hand Detected: $hands\n21 landmarks per hand"
-                } else {
-                    "No hand detected\nShow your hand"
+            if (handLandmarks == null) {
+                processGesture("NONE")
+                updateStatus("No hand detected\nShow your hand")
+            } else {
+                val gesture = GestureClassifier.detect(handLandmarks)
+                processGesture(gesture)
+                if (gesture == "NONE") {
+                    updateStatus("Hand detected\nTry a gesture")
                 }
-            )
+            }
 
         } catch (e: Exception) {
             updateStatus("Detection error: ${e.message}")
         } finally {
             bitmap?.recycle()
             image.close()
+        }
+    }
+
+    private fun processGesture(gesture: String) {
+        val now = SystemClock.elapsedRealtime()
+
+        if (gesture != lastGesture) {
+            lastGesture = gesture
+            lastGestureSince = now
+            return
+        }
+
+        if (gesture == "NONE") return
+        if (now - lastGestureSince < 500) return
+        if (now - lastActionTime < 1000) return
+
+        if (gesture == "PAUSE") {
+            controlPaused = true
+            lastActionTime = now
+            updateStatus("Gesture control PAUSED")
+            return
+        }
+
+        if (gesture == "FIST") {
+            controlPaused = false
+            lastActionTime = now
+            updateStatus("Gesture control RESUMED")
+            return
+        }
+
+        if (controlPaused) return
+
+        val action = when (gesture) {
+            "SCROLL_UP" -> "SCROLL_UP"
+            "SCROLL_DOWN" -> "SCROLL_DOWN"
+            "VOLUME_UP" -> "VOLUME_UP"
+            "VOLUME_DOWN" -> "VOLUME_DOWN"
+            else -> null
+        }
+
+        if (action != null) {
+            AirControlAccessibilityService.performAction(action)
+            lastActionTime = now
+            updateStatus("Gesture: $gesture")
         }
     }
 

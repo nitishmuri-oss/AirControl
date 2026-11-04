@@ -1,0 +1,7 @@
+.gradle/
+**/build/
+*.apk
+*.backup
+hand-build/
+new-build/
+local.properties
