@@ -252,6 +252,9 @@ class MainActivity : ComponentActivity() {
                 updateStatus("No hand detected\nShow your hand")
             } else {
                 val gesture = GestureClassifier.detect(handLandmarks)
+                if (gesture != lastGesture) {
+                    updateStatus("Detected: $gesture")
+                }
                 processGesture(gesture)
                 if (gesture == "NONE") {
                     updateStatus("Hand detected\nTry a gesture")

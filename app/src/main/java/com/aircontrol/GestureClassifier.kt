@@ -1,48 +1,70 @@
 package com.aircontrol
 
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
+import kotlin.math.hypot
 
 object GestureClassifier {
+
+    private fun distance(
+        a: NormalizedLandmark,
+        b: NormalizedLandmark
+    ): Float {
+        return hypot(a.x() - b.x(), a.y() - b.y())
+    }
 
     fun detect(landmarks: List<NormalizedLandmark>): String {
 
         if (landmarks.size < 21) return "NONE"
 
-        val indexUp = landmarks[8].y() < landmarks[6].y()
-        val middleUp = landmarks[12].y() < landmarks[10].y()
-        val ringUp = landmarks[16].y() < landmarks[14].y()
-        val pinkyUp = landmarks[20].y() < landmarks[18].y()
+        val wrist = landmarks[0]
 
-        val thumbUp =
-            landmarks[4].y() < landmarks[3].y() &&
-            landmarks[3].y() < landmarks[0].y()
+        val indexUp = distance(landmarks[8], wrist) >
+                distance(landmarks[6], wrist) * 1.12f
 
-        val thumbDown =
-            landmarks[4].y() > landmarks[3].y() &&
-            landmarks[3].y() > landmarks[0].y()
+        val middleUp = distance(landmarks[12], wrist) >
+                distance(landmarks[10], wrist) * 1.12f
 
-        if (thumbUp && !indexUp && !middleUp) {
-            return "VOLUME_UP"
+        val ringUp = distance(landmarks[16], wrist) >
+                distance(landmarks[14], wrist) * 1.12f
+
+        val pinkyUp = distance(landmarks[20], wrist) >
+                distance(landmarks[18], wrist) * 1.12f
+
+        val thumbExtended =
+            distance(landmarks[4], landmarks[5]) >
+            distance(landmarks[3], landmarks[5]) * 1.15f
+
+        // Open palm = Pause
+        if (indexUp && middleUp && ringUp && pinkyUp) {
+            return "PAUSE"
         }
 
-        if (thumbDown && !indexUp && !middleUp) {
-            return "VOLUME_DOWN"
+        // Thumbs up/down = Volume
+        if (thumbExtended &&
+            !indexUp && !middleUp && !ringUp && !pinkyUp
+        ) {
+            if (landmarks[4].y() < wrist.y() - 0.04f) {
+                return "VOLUME_UP"
+            }
+
+            if (landmarks[4].y() > wrist.y() + 0.04f) {
+                return "VOLUME_DOWN"
+            }
         }
 
+        // One finger = Scroll up
         if (indexUp && !middleUp && !ringUp && !pinkyUp) {
             return "SCROLL_UP"
         }
 
+        // Two fingers = Scroll down
         if (indexUp && middleUp && !ringUp && !pinkyUp) {
             return "SCROLL_DOWN"
         }
 
+        // Closed fist = Resume
         if (!indexUp && !middleUp && !ringUp && !pinkyUp) {
             return "FIST"
-        }
-
-        if (indexUp && middleUp && ringUp && pinkyUp) {
-            return "PAUSE"
         }
 
         return "NONE"
