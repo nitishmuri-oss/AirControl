@@ -44,15 +44,24 @@ class AirControlAccessibilityService : AccessibilityService() {
     private fun tapScreen(x: Float, y: Float) {
         val path = Path().apply {
             moveTo(x, y)
+            lineTo(x + 1f, y + 1f)
         }
 
         val gesture = GestureDescription.Builder()
             .addStroke(
-                GestureDescription.StrokeDescription(path, 0, 60)
+                GestureDescription.StrokeDescription(path, 0, 100)
             )
             .build()
 
-        dispatchGesture(gesture, null, null)
+        dispatchGesture(gesture, object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                android.util.Log.d("AirControl", "Tap completed")
+            }
+
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                android.util.Log.e("AirControl", "Tap cancelled")
+            }
+        }, null)
     }
 
     private fun adjustVolume(direction: Int) {
