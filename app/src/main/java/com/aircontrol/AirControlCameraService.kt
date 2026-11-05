@@ -33,14 +33,24 @@ class AirControlCameraService : LifecycleService() {
     }
 
     private val cameraExecutor = Executors.newSingleThreadExecutor()
+
     private var handLandmarker: HandLandmarker? = null
     private var lastTimestamp = 0L
+
     private var lastGesture = "NONE"
     private var lastGestureSince = 0L
     private var lastActionTime = 0L
-    private var controlPaused = false
+    private var lastTapTime = 0L
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    private var controlPaused = false
+    private var lastPinch = false
+    private var cursorVisible = false
+
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
         super.onStartCommand(intent, flags, startId)
 
         if (intent?.action == ACTION_STOP) {
@@ -75,6 +85,7 @@ class AirControlCameraService : LifecycleService() {
                 "AirControl Camera",
                 NotificationManager.IMPORTANCE_LOW
             )
+
             getSystemService(NotificationManager::class.java)
                 .createNotificationChannel(channel)
         }
@@ -92,6 +103,7 @@ class AirControlCameraService : LifecycleService() {
         )
 
         val openIntent = Intent(this, MainActivity::class.java)
+
         val openPendingIntent = PendingIntent.getActivity(
             this,
             2,
@@ -133,7 +145,11 @@ class AirControlCameraService : LifecycleService() {
                 .setMinTrackingConfidence(0.5f)
                 .build()
 
-            handLandmarker = HandLandmarker.createFromOptions(this, options)
+            handLandmarker = HandLandmarker.createFromOptions(
+                this,
+                options
+            )
+
         } catch (e: Exception) {
             Log.e(TAG, "Hand detector initialization failed", e)
             updateNotification("Hand detector error")
@@ -161,6 +177,7 @@ class AirControlCameraService : LifecycleService() {
                 }
 
                 provider.unbindAll()
+
                 provider.bindToLifecycle(
                     this,
                     CameraSelector.DEFAULT_FRONT_CAMERA,
@@ -168,14 +185,18 @@ class AirControlCameraService : LifecycleService() {
                 )
 
                 updateNotification("Gesture control active")
+
             } catch (e: Exception) {
                 Log.e(TAG, "Camera start failed", e)
                 updateNotification("Camera error")
             }
+
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun analyzeImage(image: androidx.camera.core.ImageProxy) {
+    private fun analyzeImage(
+        image: androidx.camera.core.ImageProxy
+    ) {
         var bitmap: Bitmap? = null
 
         try {
@@ -187,14 +208,18 @@ class AirControlCameraService : LifecycleService() {
 
             for (y in 0 until height) {
                 for (x in 0 until width) {
-                    val offset = y * plane.rowStride + x * plane.pixelStride
+                    val offset = y * plane.rowStride +
+                            x * plane.pixelStride
+
                     val r = buffer.get(offset).toInt() and 0xFF
                     val g = buffer.get(offset + 1).toInt() and 0xFF
                     val b = buffer.get(offset + 2).toInt() and 0xFF
                     val a = buffer.get(offset + 3).toInt() and 0xFF
 
                     pixels[y * width + x] =
-                        (a shl 24) or (r shl 16) or (g shl 8) or b
+                        (a shl 24) or
+                        (r shl 16) or
+                        (g shl 8) or b
                 }
             }
 
@@ -204,7 +229,9 @@ class AirControlCameraService : LifecycleService() {
                 Bitmap.Config.ARGB_8888
             )
 
-            rawBitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+            rawBitmap.setPixels(
+                pixels, 0, width, 0, 0, width, height
+            )
 
             val rotation = image.imageInfo.rotationDegrees
 
@@ -229,12 +256,18 @@ class AirControlCameraService : LifecycleService() {
             val mpImage = BitmapImageBuilder(bitmap!!).build()
 
             var timestamp = SystemClock.elapsedRealtime()
+
             if (timestamp <= lastTimestamp) {
                 timestamp = lastTimestamp + 1
             }
+
             lastTimestamp = timestamp
 
-            val result = handLandmarker?.detectForVideo(mpImage, timestamp)
+            val result = handLandmarker?.detectForVideo(
+                mpImage,
+                timestamp
+            )
+
             val landmarks = result?.landmarks()?.firstOrNull()
 
             val gesture = if (landmarks == null) {
@@ -243,10 +276,61 @@ class AirControlCameraService : LifecycleService() {
                 GestureClassifier.detect(landmarks)
             }
 
+            if (landmarks != null) {
+                val indexTip = landmarks[8]
+
+                val normalizedX =
+                    (1f - indexTip.x()).coerceIn(0f, 1f)
+
+                val normalizedY =
+                    indexTip.y().coerceIn(0f, 1f)
+
+                if (!cursorVisible) {
+                    AirControlCursorOverlay.show(this)
+                    cursorVisible = true
+                }
+
+                AirControlCursorOverlay.updatePosition(
+                    this,
+                    normalizedX,
+                    normalizedY
+                )
+
+                val now = SystemClock.elapsedRealtime()
+
+                // Pinch edge = one click
+                if (
+                    gesture == "PINCH" &&
+                    !lastPinch &&
+                    !controlPaused &&
+                    now - lastTapTime > 450
+                ) {
+                    val metrics = resources.displayMetrics
+
+                    AirControlAccessibilityService.performTap(
+                        normalizedX * metrics.widthPixels,
+                        normalizedY * metrics.heightPixels
+                    )
+
+                    lastTapTime = now
+                }
+
+                lastPinch = gesture == "PINCH"
+
+            } else {
+                lastPinch = false
+
+                if (cursorVisible) {
+                    AirControlCursorOverlay.hide()
+                    cursorVisible = false
+                }
+            }
+
             processGesture(gesture)
 
         } catch (e: Exception) {
             Log.e(TAG, "Frame analysis failed", e)
+
         } finally {
             bitmap?.recycle()
             image.close()
@@ -262,40 +346,61 @@ class AirControlCameraService : LifecycleService() {
             return
         }
 
-        if (gesture == "NONE") return
-        if (now - lastGestureSince < 500) return
-        if (now - lastActionTime < 1000) return
+        if (gesture == "NONE" || gesture == "PINCH") {
+            return
+        }
+
+        if (now - lastGestureSince < 350) {
+            return
+        }
 
         if (gesture == "PAUSE") {
-            controlPaused = true
-            lastActionTime = now
-            updateNotification("Gesture control paused")
+            if (!controlPaused) {
+                controlPaused = true
+                lastActionTime = now
+                updateNotification("Gesture control paused")
+            }
             return
         }
 
         if (gesture == "FIST") {
-            controlPaused = false
-            lastActionTime = now
-            updateNotification("Gesture control resumed")
+            if (controlPaused) {
+                controlPaused = false
+                lastActionTime = now
+                updateNotification("Gesture control resumed")
+            }
             return
         }
 
         if (controlPaused) return
 
         when (gesture) {
-            "SCROLL_UP", "SCROLL_DOWN",
+            "SCROLL_UP", "SCROLL_DOWN" -> {
+                if (now - lastActionTime >= 350) {
+                    AirControlAccessibilityService.performAction(gesture)
+                    lastActionTime = now
+                }
+            }
+
             "VOLUME_UP", "VOLUME_DOWN" -> {
-                AirControlAccessibilityService.performAction(gesture)
-                lastActionTime = now
+                if (now - lastActionTime >= 650) {
+                    AirControlAccessibilityService.performAction(gesture)
+                    lastActionTime = now
+                }
             }
         }
     }
 
     override fun onDestroy() {
+        AirControlCursorOverlay.hide()
         handLandmarker?.close()
         cameraExecutor.shutdown()
 
-        ProcessCameraProvider.getInstance(this).get().unbindAll()
+        try {
+            ProcessCameraProvider.getInstance(this).get().unbindAll()
+        } catch (e: Exception) {
+            Log.e(TAG, "Camera cleanup failed", e)
+        }
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()

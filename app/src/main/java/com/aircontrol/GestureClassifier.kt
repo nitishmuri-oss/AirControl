@@ -30,16 +30,24 @@ object GestureClassifier {
         val pinkyUp = distance(landmarks[20], wrist) >
                 distance(landmarks[18], wrist) * 1.12f
 
+        val handSize = distance(landmarks[0], landmarks[9])
+        val pinchDistance = distance(landmarks[4], landmarks[8])
+
+        // Thumb + Index pinch = Select
+        if (handSize > 0.01f &&
+            pinchDistance < handSize * 0.25f
+        ) {
+            return "PINCH"
+        }
+
         val thumbExtended =
             distance(landmarks[4], landmarks[5]) >
             distance(landmarks[3], landmarks[5]) * 1.15f
 
-        // Open palm = Pause
         if (indexUp && middleUp && ringUp && pinkyUp) {
             return "PAUSE"
         }
 
-        // Thumbs up/down = Volume
         if (thumbExtended &&
             !indexUp && !middleUp && !ringUp && !pinkyUp
         ) {
@@ -52,17 +60,14 @@ object GestureClassifier {
             }
         }
 
-        // One finger = Scroll up
         if (indexUp && !middleUp && !ringUp && !pinkyUp) {
             return "SCROLL_UP"
         }
 
-        // Two fingers = Scroll down
         if (indexUp && middleUp && !ringUp && !pinkyUp) {
             return "SCROLL_DOWN"
         }
 
-        // Closed fist = Resume
         if (!indexUp && !middleUp && !ringUp && !pinkyUp) {
             return "FIST"
         }

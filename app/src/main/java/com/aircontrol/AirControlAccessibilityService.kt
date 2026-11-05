@@ -14,6 +14,10 @@ class AirControlAccessibilityService : AccessibilityService() {
         fun performAction(action: String) {
             instance?.runAction(action)
         }
+
+        fun performTap(x: Float, y: Float) {
+            instance?.tapScreen(x, y)
+        }
     }
 
     override fun onServiceConnected() {
@@ -22,29 +26,38 @@ class AirControlAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Accessibility events will be handled here later.
     }
 
     override fun onInterrupt() {
-        // Stop ongoing actions if interrupted.
     }
 
     fun runAction(action: String) {
         when (action) {
             "BACK" -> performGlobalAction(GLOBAL_ACTION_BACK)
-
             "VOLUME_UP" -> adjustVolume(AudioManager.ADJUST_RAISE)
-
             "VOLUME_DOWN" -> adjustVolume(AudioManager.ADJUST_LOWER)
-
             "SCROLL_UP" -> scrollScreen(true)
-
             "SCROLL_DOWN" -> scrollScreen(false)
         }
     }
 
+    private fun tapScreen(x: Float, y: Float) {
+        val path = Path().apply {
+            moveTo(x, y)
+        }
+
+        val gesture = GestureDescription.Builder()
+            .addStroke(
+                GestureDescription.StrokeDescription(path, 0, 60)
+            )
+            .build()
+
+        dispatchGesture(gesture, null, null)
+    }
+
     private fun adjustVolume(direction: Int) {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+
         audio.adjustStreamVolume(
             AudioManager.STREAM_MUSIC,
             direction,
@@ -55,8 +68,18 @@ class AirControlAccessibilityService : AccessibilityService() {
     private fun scrollScreen(up: Boolean) {
         val metrics = resources.displayMetrics
         val x = metrics.widthPixels / 2f
-        val startY = if (up) metrics.heightPixels * 0.75f else metrics.heightPixels * 0.25f
-        val endY = if (up) metrics.heightPixels * 0.25f else metrics.heightPixels * 0.75f
+
+        val startY = if (up) {
+            metrics.heightPixels * 0.75f
+        } else {
+            metrics.heightPixels * 0.25f
+        }
+
+        val endY = if (up) {
+            metrics.heightPixels * 0.25f
+        } else {
+            metrics.heightPixels * 0.75f
+        }
 
         val path = Path().apply {
             moveTo(x, startY)
@@ -65,7 +88,7 @@ class AirControlAccessibilityService : AccessibilityService() {
 
         val gesture = GestureDescription.Builder()
             .addStroke(
-                GestureDescription.StrokeDescription(path, 0, 400)
+                GestureDescription.StrokeDescription(path, 0, 250)
             )
             .build()
 
@@ -76,6 +99,7 @@ class AirControlAccessibilityService : AccessibilityService() {
         if (instance === this) {
             instance = null
         }
+
         super.onDestroy()
     }
 }
