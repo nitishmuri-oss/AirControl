@@ -35,7 +35,7 @@ object GestureClassifier {
 
         // Thumb + Index pinch = Select
         if (handSize > 0.01f &&
-            pinchDistance < handSize * 0.25f
+            pinchDistance < handSize * 0.45f
         ) {
             return "PINCH"
         }
